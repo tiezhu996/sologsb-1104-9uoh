@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BlankPanel } from '../components/common/BlankPanel'
+import { ReviewNotice } from '../components/common/ReviewNotice'
 import { StepRail } from '../components/common/StepRail'
+import { StepSourceTag } from '../components/common/SourceTag'
 import { SvgCanvas } from '../components/common/SvgCanvas'
+import { useReviews } from '../hooks/useReviews'
 import { useStepOrder } from '../hooks/useStepOrder'
 import { useDiagramStore } from '../stores/diagramStore'
 import { useJointStore } from '../stores/jointStore'
@@ -11,11 +14,13 @@ export default function StepBoard() {
   const { id: idParam } = useParams()
   const id = idParam ?? ''
   const joints = useJointStore((state) => state.joints)
+  const members = useJointStore((state) => state.members)
   const loadAll = useJointStore((state) => state.loadAll)
   const diagrams = useDiagramStore((state) => state.diagrams)
   const selectedMemberId = useDiagramStore((state) => state.selectedMemberId)
   const loadDiagrams = useDiagramStore((state) => state.loadDiagrams)
   const setSelectedMember = useDiagramStore((state) => state.setSelectedMember)
+  const reviews = useReviews(id)
   const { steps, totalDurationSec, currentStepIndex, move, setCurrentStep } = useStepOrder(id)
 
   useEffect(() => {
@@ -26,6 +31,11 @@ export default function StepBoard() {
   const joint = joints.find((item) => item.id === id)
   const currentStep = steps[currentStepIndex]
   const currentDiagram = diagrams.find((diagram) => diagram.stepId === currentStep?.id) ?? diagrams[0]
+  const memberNames = Object.fromEntries(members.map((member) => [member.id, member.name]))
+  const stepNames = Object.fromEntries(steps.map((step) => [step.id, `${step.action}·${step.direction}`]))
+  const conflictStepIds = new Set(
+    reviews.filter((review) => review.kind === 'move').map((review) => review.recordId),
+  )
 
   return (
     <div className="space-y-7">
@@ -35,12 +45,16 @@ export default function StepBoard() {
         </Link>
       </div>
 
+      {reviews.length > 0 ? (
+        <ReviewNotice reviews={reviews} memberNames={{ ...memberNames, ...stepNames }} />
+      ) : null}
+
       <section className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-2 text-xs font-semibold tracking-[0.24em] text-wood-500">STEP SEQUENCE</p>
           <h1 className="text-3xl font-bold tracking-tight text-wood-900 sm:text-4xl">{joint?.name ?? '榫卯'} · 拆装步序编排</h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
-            拖动左侧步骤调整真实顺序，右侧同步查看每一步的示意图和风险提醒。
+            拖动左侧步骤调整真实顺序，右侧同步查看每一步的示意图和风险提醒。两个窗口可分别移动不同步骤；同一步被两边移动时会留下待核对项，不会覆盖。
           </p>
         </div>
         <div className="rounded-xl border border-wood-100 bg-white px-5 py-3 text-sm text-stone-600 shadow-sm">
@@ -56,7 +70,7 @@ export default function StepBoard() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-wood-900">步骤轨道</h2>
-                <p className="mt-1 text-xs text-stone-500">拖动任意步骤到目标位置</p>
+                <p className="mt-1 text-xs text-stone-500">拖动任意步骤到目标位置，自动带来源与基准位置</p>
               </div>
               <span className="rounded-full bg-wood-50 px-3 py-1 text-xs text-wood-700">自动保存</span>
             </div>
@@ -65,6 +79,8 @@ export default function StepBoard() {
               currentIndex={currentStepIndex}
               onSelect={setCurrentStep}
               onMove={(from, to) => void move(from, to)}
+              conflictStepIds={conflictStepIds}
+              renderStepMeta={(step) => step.lastMove ? <StepSourceTag source={step.lastMove} /> : null}
             />
           </section>
 

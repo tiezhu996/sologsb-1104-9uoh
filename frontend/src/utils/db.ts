@@ -1,9 +1,13 @@
 import Dexie, { type Table } from 'dexie'
 import type { Diagram, HitArea } from '../types/diagram'
+import type { EditRecord, ReviewItem } from '../types/edit'
 import type { Furniture } from '../types/furniture'
 import type { JointType } from '../types/jointType'
 import type { Member } from '../types/member'
 import type { DisassemblyStep } from '../types/step'
+import { ensureOrderKeys } from './orderKey'
+
+export const SCHEMA_REV = 3
 
 export class MortiseDatabase extends Dexie {
   joints!: Table<JointType, string>
@@ -11,6 +15,10 @@ export class MortiseDatabase extends Dexie {
   steps!: Table<DisassemblyStep, string>
   diagrams!: Table<Diagram, string>
   furniture!: Table<Furniture, string>
+  /** 跨窗口合并所用的操作日志，按编辑记录标识幂等。 */
+  edits!: Table<EditRecord, string>
+  /** 同记录被两边改过时留下的待核对项。 */
+  reviews!: Table<ReviewItem, string>
 
   constructor() {
     super('gbmortise-db')
@@ -40,6 +48,51 @@ export class MortiseDatabase extends Dexie {
         furniture.schemaRev = 2
       })
     })
+
+    // v3：并发编辑协作层。新增操作日志与待核对表；
+    // 给构件补记录版本水位、给步骤补小数排序键，旧记录内容原样保留可用。
+    this.version(3)
+      .stores({
+        ...schema,
+        edits: 'id, payload.memberId, payload.stepId, at',
+        reviews: 'id, jointTypeId, recordId, status, kind',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table<JointType, string>('joints').toCollection().modify((joint) => {
+          joint.schemaRev = SCHEMA_REV
+        })
+        await transaction.table<Member, string>('members').toCollection().modify((member) => {
+          member.revision = member.revision ?? 0
+          member.dimSources = member.dimSources ?? {}
+          member.schemaRev = SCHEMA_REV
+        })
+
+        const stepsTable = transaction.table<DisassemblyStep, string>('steps')
+        const allSteps = await stepsTable.toArray()
+        const byJoint = new Map<string, DisassemblyStep[]>()
+        allSteps.forEach((step) => {
+          const list = byJoint.get(step.jointTypeId) ?? []
+          list.push(step)
+          byJoint.set(step.jointTypeId, list)
+        })
+        const keyPatch = new Map<string, number>()
+        byJoint.forEach((list) => {
+          ensureOrderKeys(list).forEach((key, id) => keyPatch.set(id, key))
+        })
+        await stepsTable.toCollection().modify((step) => {
+          const key = keyPatch.get(step.id)
+          if (key !== undefined) step.orderKey = key
+          step.revision = step.revision ?? 0
+          step.schemaRev = SCHEMA_REV
+        })
+
+        await transaction.table<Diagram, string>('diagrams').toCollection().modify((diagram) => {
+          diagram.schemaRev = SCHEMA_REV
+        })
+        await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
+          furniture.schemaRev = SCHEMA_REV
+        })
+      })
   }
 }
 
@@ -172,15 +225,30 @@ const furnitureSeeds: Furniture[] = [
   { id: 'furniture-guijia', jointTypeId: 'joint-dovetail', name: '柜架', era: '明清', position: '柜体侧板与横枨端部', loadNote: '燕尾榫限制横枨外拔，兼顾客体板面伸缩。' },
 ]
 
+/** 种子步骤补齐等距排序键。 */
+function withOrderKeys<T extends { seq: number }>(items: T[]): Array<T & { orderKey: number }> {
+  const sorted = [...items].sort((a, b) => a.seq - b.seq)
+  return sorted.map((item, index) => ({ ...item, orderKey: (index + 1) * 1_048_576 }))
+}
+
 export const db = new MortiseDatabase()
 
 async function writeSeedData(): Promise<void> {
   await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture], async () => {
-    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: 2 })))
+    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, revision: 0, schemaRev: SCHEMA_REV })))
+    await db.members.bulkAdd(memberSeeds.map((item) => ({
+      ...item,
+      revision: 0,
+      dimSources: {},
+      schemaRev: SCHEMA_REV,
+    })))
+    await db.steps.bulkAdd(withOrderKeys(stepSeeds).map((item) => ({
+      ...item,
+      revision: 0,
+      schemaRev: SCHEMA_REV,
+    })))
+    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
+    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
   })
 }
 

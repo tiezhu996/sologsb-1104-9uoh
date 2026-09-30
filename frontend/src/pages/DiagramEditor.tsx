@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BlankPanel } from '../components/common/BlankPanel'
 import { SizeField } from '../components/common/SizeField'
+import { FieldSourceTag } from '../components/common/SourceTag'
 import { SvgCanvas } from '../components/common/SvgCanvas'
+import { useDimensionEdit } from '../hooks/useDimensionEdit'
 import { useSvgHitAreas } from '../hooks/useSvgHitAreas'
 import { useDiagramStore } from '../stores/diagramStore'
 import { useJointStore } from '../stores/jointStore'
@@ -15,7 +17,6 @@ export default function DiagramEditor() {
   const members = useJointStore((state) => state.members)
   const loadAll = useJointStore((state) => state.loadAll)
   const renameMember = useJointStore((state) => state.renameMember)
-  const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
   const diagrams = useDiagramStore((state) => state.diagrams)
   const selectedDiagramId = useDiagramStore((state) => state.selectedDiagramId)
   const draftSvgMarkup = useDiagramStore((state) => state.draftSvgMarkup)
@@ -25,6 +26,7 @@ export default function DiagramEditor() {
   const setDraftSvgMarkup = useDiagramStore((state) => state.setDraftSvgMarkup)
   const setDraftTitle = useDiagramStore((state) => state.setDraftTitle)
   const saveDraft = useDiagramStore((state) => state.saveDraft)
+  const { beginEdit, commit } = useDimensionEdit()
   const { hitAreas, selectedMemberId, selectedMember, selectMember } = useSvgHitAreas(selectedDiagramId)
 
   useEffect(() => {
@@ -112,50 +114,54 @@ export default function DiagramEditor() {
                       />
                     </label>
                     <div className="grid grid-cols-2 gap-4">
-                      <SizeField
-                        label="长度"
-                        valueMm={selectedMember.lengthMm}
-                        toleranceMm={selectedMember.toleranceMm}
-                        onChange={(value) => void updateMemberDimensions(selectedMember.id, {
-                          lengthMm: value,
-                          widthMm: selectedMember.widthMm,
-                          thicknessMm: selectedMember.thicknessMm,
-                          toleranceMm: selectedMember.toleranceMm,
-                        })}
-                      />
-                      <SizeField
-                        label="宽度"
-                        valueMm={selectedMember.widthMm}
-                        toleranceMm={selectedMember.toleranceMm}
-                        onChange={(value) => void updateMemberDimensions(selectedMember.id, {
-                          lengthMm: selectedMember.lengthMm,
-                          widthMm: value,
-                          thicknessMm: selectedMember.thicknessMm,
-                          toleranceMm: selectedMember.toleranceMm,
-                        })}
-                      />
-                      <SizeField
-                        label="厚度"
-                        valueMm={selectedMember.thicknessMm}
-                        toleranceMm={selectedMember.toleranceMm}
-                        onChange={(value) => void updateMemberDimensions(selectedMember.id, {
-                          lengthMm: selectedMember.lengthMm,
-                          widthMm: selectedMember.widthMm,
-                          thicknessMm: value,
-                          toleranceMm: selectedMember.toleranceMm,
-                        })}
-                      />
-                      <SizeField
-                        label="配合公差"
-                        valueMm={selectedMember.toleranceMm}
-                        toleranceMm={selectedMember.toleranceMm}
-                        onChange={(value) => void updateMemberDimensions(selectedMember.id, {
-                          lengthMm: selectedMember.lengthMm,
-                          widthMm: selectedMember.widthMm,
-                          thicknessMm: selectedMember.thicknessMm,
-                          toleranceMm: value,
-                        })}
-                      />
+                      <div>
+                        <SizeField
+                          label="长度"
+                          valueMm={selectedMember.lengthMm}
+                          toleranceMm={selectedMember.toleranceMm}
+                          onBeginEdit={() => beginEdit(selectedMember.id, 'lengthMm')}
+                          onChange={(value) => void commit(selectedMember.id, 'lengthMm', value)}
+                        />
+                        {selectedMember.dimSources?.lengthMm ? (
+                          <FieldSourceTag source={selectedMember.dimSources.lengthMm} />
+                        ) : null}
+                      </div>
+                      <div>
+                        <SizeField
+                          label="宽度"
+                          valueMm={selectedMember.widthMm}
+                          toleranceMm={selectedMember.toleranceMm}
+                          onBeginEdit={() => beginEdit(selectedMember.id, 'widthMm')}
+                          onChange={(value) => void commit(selectedMember.id, 'widthMm', value)}
+                        />
+                        {selectedMember.dimSources?.widthMm ? (
+                          <FieldSourceTag source={selectedMember.dimSources.widthMm} />
+                        ) : null}
+                      </div>
+                      <div>
+                        <SizeField
+                          label="厚度"
+                          valueMm={selectedMember.thicknessMm}
+                          toleranceMm={selectedMember.toleranceMm}
+                          onBeginEdit={() => beginEdit(selectedMember.id, 'thicknessMm')}
+                          onChange={(value) => void commit(selectedMember.id, 'thicknessMm', value)}
+                        />
+                        {selectedMember.dimSources?.thicknessMm ? (
+                          <FieldSourceTag source={selectedMember.dimSources.thicknessMm} />
+                        ) : null}
+                      </div>
+                      <div>
+                        <SizeField
+                          label="配合公差"
+                          valueMm={selectedMember.toleranceMm}
+                          toleranceMm={selectedMember.toleranceMm}
+                          onBeginEdit={() => beginEdit(selectedMember.id, 'toleranceMm')}
+                          onChange={(value) => void commit(selectedMember.id, 'toleranceMm', value)}
+                        />
+                        {selectedMember.dimSources?.toleranceMm ? (
+                          <FieldSourceTag source={selectedMember.dimSources.toleranceMm} />
+                        ) : null}
+                      </div>
                     </div>
                     <dl className="grid grid-cols-2 gap-3 rounded-xl bg-wood-50 p-4 text-xs">
                       <div><dt className="text-stone-500">归属</dt><dd className="mt-1 font-medium text-wood-900">{selectedMember.part}</dd></div>

@@ -2,10 +2,15 @@ import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BlankPanel } from '../components/common/BlankPanel'
 import { DifficultyTag } from '../components/common/DifficultyTag'
+import { ReviewNotice } from '../components/common/ReviewNotice'
 import { SizeField } from '../components/common/SizeField'
+import { FieldSourceTag, StepSourceTag } from '../components/common/SourceTag'
 import { StepRail } from '../components/common/StepRail'
+import { useDimensionEdit } from '../hooks/useDimensionEdit'
+import { useReviews } from '../hooks/useReviews'
 import { useStepOrder } from '../hooks/useStepOrder'
 import { useJointStore } from '../stores/jointStore'
+import type { DimField } from '../types/edit'
 import { checkTolerance, formatDimension } from '../utils/measure'
 import { exportJointData } from '../utils/export'
 
@@ -17,7 +22,8 @@ export default function JointDetail() {
   const furniture = useJointStore((state) => state.furniture)
   const loading = useJointStore((state) => state.loading)
   const loadAll = useJointStore((state) => state.loadAll)
-  const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
+  const { beginEdit, commit } = useDimensionEdit()
+  const reviews = useReviews(id)
   const { steps, totalDurationSec, currentStepIndex, move, setCurrentStep } = useStepOrder(id)
 
   useEffect(() => {
@@ -29,6 +35,23 @@ export default function JointDetail() {
     .filter((member) => member.jointTypeId === id)
     .sort((a, b) => a.lengthMm - b.lengthMm)
   const currentFurniture = furniture.filter((item) => item.jointTypeId === id)
+  const memberNames = Object.fromEntries(currentMembers.map((member) => [member.id, member.name]))
+  const stepNames = Object.fromEntries(steps.map((step) => [step.id, `${step.action}·${step.direction}`]))
+
+  const renderSizeField = (memberId: string, field: DimField, label: string, valueMm: number, toleranceMm: number) => (
+    <div>
+      <SizeField
+        label={label}
+        valueMm={valueMm}
+        toleranceMm={toleranceMm}
+        onBeginEdit={() => beginEdit(memberId, field)}
+        onChange={(value) => void commit(memberId, field, value)}
+      />
+      {members.find((member) => member.id === memberId)?.dimSources?.[field] ? (
+        <FieldSourceTag source={members.find((member) => member.id === memberId)!.dimSources![field]!} />
+      ) : null}
+    </div>
+  )
 
   if (!joint && !loading) {
     return (
@@ -49,6 +72,10 @@ export default function JointDetail() {
           <span aria-hidden="true">←</span> 返回图鉴总览
         </Link>
       </div>
+
+      {reviews.length > 0 ? (
+        <ReviewNotice reviews={reviews} memberNames={{ ...memberNames, ...stepNames }} />
+      ) : null}
 
       <section className="panel overflow-hidden">
         <div className="relative grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:items-start sm:p-8">
@@ -79,7 +106,7 @@ export default function JointDetail() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-wood-900">构件尺寸与公差</h2>
-            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可直接在毫米与寸之间切换录入。</p>
+            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可直接在毫米与寸之间切换录入；每处修改带来源窗口与基准值。</p>
           </div>
           <span className="text-xs text-stone-500">基准间隙 0.20 mm，允许偏离 ±0.12 mm</span>
         </div>
@@ -110,44 +137,14 @@ export default function JointDetail() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 text-stone-600">{member.part}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-stone-600">{member.grainDir}</td>
-                      <td className="w-32 px-3 py-3">
-                        <SizeField
-                          label={`${member.name}长度`}
-                          valueMm={member.lengthMm}
-                          toleranceMm={member.toleranceMm}
-                          onChange={(value) => void updateMemberDimensions(member.id, {
-                            lengthMm: value,
-                            widthMm: member.widthMm,
-                            thicknessMm: member.thicknessMm,
-                            toleranceMm: member.toleranceMm,
-                          })}
-                        />
+                      <td className="w-40 px-3 py-3">
+                        {renderSizeField(member.id, 'lengthMm', `${member.name}长度`, member.lengthMm, member.toleranceMm)}
                       </td>
-                      <td className="w-32 px-3 py-3">
-                        <SizeField
-                          label={`${member.name}宽度`}
-                          valueMm={member.widthMm}
-                          toleranceMm={member.toleranceMm}
-                          onChange={(value) => void updateMemberDimensions(member.id, {
-                            lengthMm: member.lengthMm,
-                            widthMm: value,
-                            thicknessMm: member.thicknessMm,
-                            toleranceMm: member.toleranceMm,
-                          })}
-                        />
+                      <td className="w-40 px-3 py-3">
+                        {renderSizeField(member.id, 'widthMm', `${member.name}宽度`, member.widthMm, member.toleranceMm)}
                       </td>
-                      <td className="w-32 px-3 py-3">
-                        <SizeField
-                          label={`${member.name}厚度`}
-                          valueMm={member.thicknessMm}
-                          toleranceMm={member.toleranceMm}
-                          onChange={(value) => void updateMemberDimensions(member.id, {
-                            lengthMm: member.lengthMm,
-                            widthMm: member.widthMm,
-                            thicknessMm: value,
-                            toleranceMm: member.toleranceMm,
-                          })}
-                        />
+                      <td className="w-40 px-3 py-3">
+                        {renderSizeField(member.id, 'thicknessMm', `${member.name}厚度`, member.thicknessMm, member.toleranceMm)}
                       </td>
                       <td className="w-52 px-4 py-4">
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
@@ -197,14 +194,20 @@ export default function JointDetail() {
           <div className="flex items-end justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold text-wood-900">拆装步序</h2>
-              <p className="mt-1 text-sm text-stone-500">点击步骤查看风险提醒，也可直接拖动调整顺序。</p>
+              <p className="mt-1 text-sm text-stone-500">点击步骤查看风险提醒，也可直接拖动调整顺序；不同步骤可在各窗口分别移动。</p>
             </div>
             <span className="text-xs text-wood-700">共 {totalDurationSec} 秒</span>
           </div>
           {steps.length === 0 ? (
             <BlankPanel title="尚无拆装步骤" description="进入步序编排页补充拆装动作。" />
           ) : (
-            <StepRail steps={steps} currentIndex={currentStepIndex} onSelect={setCurrentStep} onMove={(from, to) => void move(from, to)} />
+            <StepRail
+              steps={steps}
+              currentIndex={currentStepIndex}
+              onSelect={setCurrentStep}
+              onMove={(from, to) => void move(from, to)}
+              renderStepMeta={(step) => step.lastMove ? <StepSourceTag source={step.lastMove} /> : null}
+            />
           )}
         </div>
       </section>
