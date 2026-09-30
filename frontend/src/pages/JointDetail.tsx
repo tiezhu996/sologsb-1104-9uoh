@@ -6,7 +6,9 @@ import { SizeField } from '../components/common/SizeField'
 import { StepRail } from '../components/common/StepRail'
 import { useStepOrder } from '../hooks/useStepOrder'
 import { useJointStore } from '../stores/jointStore'
+import { conflictsForRecord } from '../utils/changeLog'
 import { checkTolerance, formatDimension } from '../utils/measure'
+import { formatSourceLabel } from '../utils/source'
 import { exportJointData } from '../utils/export'
 
 export default function JointDetail() {
@@ -15,6 +17,7 @@ export default function JointDetail() {
   const joints = useJointStore((state) => state.joints)
   const members = useJointStore((state) => state.members)
   const furniture = useJointStore((state) => state.furniture)
+  const conflicts = useJointStore((state) => state.conflicts)
   const loading = useJointStore((state) => state.loading)
   const loadAll = useJointStore((state) => state.loadAll)
   const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
@@ -102,11 +105,22 @@ export default function JointDetail() {
               <tbody className="divide-y divide-stone-100">
                 {currentMembers.map((member) => {
                   const tolerance = checkTolerance(member.toleranceMm, 0.2, 0.12)
+                  const memberConflicts = conflictsForRecord(conflicts, 'member', member.id)
                   return (
                     <tr key={member.id} className="align-top">
                       <td className="px-4 py-4">
                         <strong className="block text-stone-900">{member.name}</strong>
                         <span className="mt-1 block max-w-52 text-xs leading-5 text-stone-500">{member.note}</span>
+                        {memberConflicts.length > 0 ? (
+                          <span
+                            className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                            title={memberConflicts
+                              .map((item) => `${item.field}：${item.options.map((o) => `${formatSourceLabel(o.source)}=${o.value}`).join(' / ')}`)
+                              .join('\n')}
+                          >
+                            待核对 {memberConflicts.length}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 text-stone-600">{member.part}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-stone-600">{member.grainDir}</td>

@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import type { ChangeRecord, ConflictItem } from '../types/change'
 import type { Diagram, HitArea } from '../types/diagram'
 import type { Furniture } from '../types/furniture'
 import type { JointType } from '../types/jointType'
@@ -11,6 +12,8 @@ export class MortiseDatabase extends Dexie {
   steps!: Table<DisassemblyStep, string>
   diagrams!: Table<Diagram, string>
   furniture!: Table<Furniture, string>
+  changes!: Table<ChangeRecord, string>
+  conflicts!: Table<ConflictItem, string>
 
   constructor() {
     super('gbmortise-db')
@@ -20,6 +23,8 @@ export class MortiseDatabase extends Dexie {
       steps: 'id, jointTypeId, seq, action',
       diagrams: 'id, jointTypeId, stepId, view',
       furniture: 'id, jointTypeId, name',
+      changes: 'id, recordType, recordId, field, source, status, createdAt, [recordType+recordId+field]',
+      conflicts: 'id, recordType, recordId, field, status, createdAt, [recordType+recordId+field]',
     }
 
     this.version(1).stores(schema)
@@ -38,6 +43,15 @@ export class MortiseDatabase extends Dexie {
       })
       await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
         furniture.schemaRev = 2
+      })
+    })
+    // version(3)：为步序补充合并用的 orderKey，并新增变更/待核对两张表。
+    // 旧数据原样保留，仅补字段；原有内容保持可用。
+    this.version(3).stores(schema).upgrade(async (transaction) => {
+      await transaction.table<DisassemblyStep, string>('steps').toCollection().modify((step) => {
+        if (typeof step.orderKey !== 'number') {
+          step.orderKey = step.seq
+        }
       })
     })
   }
@@ -178,7 +192,7 @@ async function writeSeedData(): Promise<void> {
   await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture], async () => {
     await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: 2 })))
     await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 2 })))
+    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 2, orderKey: item.seq })))
     await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: 2 })))
     await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: 2 })))
   })

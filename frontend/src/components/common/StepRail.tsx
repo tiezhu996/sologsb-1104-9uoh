@@ -1,5 +1,8 @@
 import type { DragEvent } from 'react'
+import { useJointStore } from '../../stores/jointStore'
 import type { DisassemblyStep } from '../../types/step'
+import { conflictsForRecord } from '../../utils/changeLog'
+import { formatSourceLabel } from '../../utils/source'
 
 interface StepRailProps {
   steps: DisassemblyStep[]
@@ -9,6 +12,7 @@ interface StepRailProps {
 }
 
 export function StepRail({ steps, currentIndex, onSelect, onMove }: StepRailProps) {
+  const conflicts = useJointStore((state) => state.conflicts)
   const handleDrop = (event: DragEvent<HTMLElement>, to: number) => {
     event.preventDefault()
     const from = Number(event.dataTransfer.getData('text/plain'))
@@ -17,7 +21,9 @@ export function StepRail({ steps, currentIndex, onSelect, onMove }: StepRailProp
 
   return (
     <div className="space-y-3" aria-label="拆装步骤轨道">
-      {steps.map((step, index) => (
+      {steps.map((step, index) => {
+        const stepConflicts = conflictsForRecord(conflicts, 'step', step.id)
+        return (
         <article
           key={step.id}
           draggable
@@ -51,6 +57,16 @@ export function StepRail({ steps, currentIndex, onSelect, onMove }: StepRailProp
               <span className="flex flex-wrap items-center gap-2">
                 <strong className="text-sm text-stone-900">{step.action}</strong>
                 <span className="text-xs text-stone-500">{step.direction} · {step.tool}</span>
+                {stepConflicts.length > 0 ? (
+                  <span
+                    className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                    title={stepConflicts
+                      .map((item) => `${item.field}：${item.options.map((o) => `${formatSourceLabel(o.source)}=${o.value}`).join(' / ')}`)
+                      .join('\n')}
+                  >
+                    待核对
+                  </span>
+                ) : null}
               </span>
               <span className="mt-1 block text-xs leading-5 text-stone-500">{step.riskNote}</span>
               <span className="mt-1 block text-[11px] text-wood-700">停留 {step.holdSec} 秒</span>
@@ -62,7 +78,8 @@ export function StepRail({ steps, currentIndex, onSelect, onMove }: StepRailProp
             </span>
           </div>
         </article>
-      ))}
+        )
+      })}
     </div>
   )
 }
